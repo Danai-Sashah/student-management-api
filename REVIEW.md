@@ -51,6 +51,15 @@ explaining *why* each annotation exists (`@RestController`, `@RequestMapping`,
 `@PathVariable`, `@RequestBody`, `@Valid`, etc.), not just restating what the
 code does line by line.
 
+In `StudentController.java` specifically, every block that was rewritten
+(fields, `getAll`, `getOne`, `create`, `replace`, `patch`, `delete`) has the
+**original code left in as a comment directly above the new version**,
+followed by a "Why" explanation. Nothing was silently deleted — you can read
+both versions side by side and see exactly what changed and the concrete
+failure case each change was fixing (duplicate ids under concurrent requests,
+O(n) scans, removing/replacing by list index instead of by id, exposing the
+internal collection to callers).
+
 ## Not changed, but worth knowing for next time 📚
 
 These are intentionally left as-is for now — they're good "next lesson"

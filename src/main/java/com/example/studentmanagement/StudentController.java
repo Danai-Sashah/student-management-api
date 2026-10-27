@@ -30,24 +30,58 @@ import java.util.concurrent.atomic.AtomicLong;
 @RequestMapping("/api/students")
 public class StudentController {
 
-    // Map<id, Student> instead of a List: looking a student up by id is
-    // O(1) (one hash lookup) instead of O(n) (scanning every student).
-    // LinkedHashMap keeps insertion order, so GET /api/students still
-    // returns students in the order they were created.
+    // ----------------------------------------------------------------
+    // ORIGINAL (not recommended) - kept here so you can see what changed:
+    //
+    // private List<Student> students = new ArrayList<>();
+    // private Long nextId = 1L;
+    //
+    // Why this wasn't ideal:
+    // 1. A List means every lookup by id (in getOne/replace/patch/delete)
+    //    has to loop through every element checking s.getId().equals(id)
+    //    until it finds a match. That's O(n): with 10,000 students, a
+    //    single GET /api/students/9999 could compare against all 10,000.
+    //    A Map keyed by id makes that lookup a single O(1) hash lookup.
+    // 2. `Long nextId` with `nextId++` is not thread-safe. nextId++ is
+    //    really three separate steps: read the value, add 1, write it
+    //    back. If two create() requests happen at almost the same instant,
+    //    both can read the same value before either writes back, so two
+    //    different students get handed the same id. AtomicLong bundles
+    //    "read current value and increment" into one atomic step, so
+    //    that race can't happen.
+    // ----------------------------------------------------------------
     private final Map<Long, Student> students = new LinkedHashMap<>();
-
-    // AtomicLong instead of a plain `Long nextId` field: if two requests
-    // hit create() at the exact same time, nextId++ on a plain field can
-    // hand out the same id twice. getAndIncrement() is guaranteed atomic.
     private final AtomicLong nextId = new AtomicLong(1);
 
     @GetMapping
     public List<Student> getAll() {
+        // ORIGINAL (not recommended): return students;
+        //
+        // Why: that returned a direct reference to the internal
+        // collection. Any caller that got that List back could add,
+        // remove, or reorder entries in it directly - completely
+        // bypassing create()/delete() and corrupting the controller's
+        // internal state without going through any of its logic.
+        // Returning a fresh ArrayList copy of the values means callers
+        // can do whatever they want with what they get back without it
+        // affecting what this controller stores.
         return new ArrayList<>(students.values());
     }
 
     @GetMapping("/{id}")
     public ResponseEntity<Student> getOne(@PathVariable Long id) {
+        // ORIGINAL (not recommended):
+        // for (Student s : students) {
+        //     if (s.getId().equals(id)) {
+        //         return ResponseEntity.ok(s);
+        //     }
+        // }
+        // return ResponseEntity.notFound().build();
+        //
+        // Why: this is the O(n) scan described above. students.get(id)
+        // on a Map does the same job in one step, and reads more clearly
+        // too - "get the student with this id" instead of "loop through
+        // everyone and compare".
         Student student = students.get(id);
         if (student == null) {
             return ResponseEntity.notFound().build();
@@ -64,6 +98,15 @@ public class StudentController {
      */
     @PostMapping
     public ResponseEntity<Student> create(@Valid @RequestBody Student student) {
+        // ORIGINAL (not recommended):
+        // student.setId(nextId++);
+        // students.add(student);
+        //
+        // Why `nextId++` wasn't safe: see the note above the `nextId`
+        // field - it's not atomic, so concurrent requests can be handed
+        // duplicate ids. `students.add(student)` itself was fine for a
+        // List, but once students became a Map we need to store it by
+        // its id with put(key, value) instead of just appending it.
         student.setId(nextId.getAndIncrement());
         students.put(student.getId(), student);
         return ResponseEntity.status(HttpStatus.CREATED).body(student);
@@ -74,6 +117,24 @@ public class StudentController {
     // is correct PUT semantics (contrast with PATCH below, which merges).
     @PutMapping("/{id}")
     public ResponseEntity<Student> replace(@PathVariable Long id, @Valid @RequestBody Student newStudent) {
+        // ORIGINAL (not recommended):
+        // for (int i = 0; i < students.size(); i++) {
+        //     if (students.get(i).getId().equals(id)) {
+        //         newStudent.setId(id);
+        //         students.set(i, newStudent);
+        //         return ResponseEntity.ok(newStudent);
+        //     }
+        // }
+        // return ResponseEntity.notFound().build();
+        //
+        // Why: same O(n) scan problem as getOne, but there's a second,
+        // sneakier issue - students.get(i)/students.set(i, ...) access
+        // the list by *position*, not by id. This only worked because the
+        // list happened to stay in id order. If any other method ever
+        // sorted the list, or inserted in a different order, this method
+        // would silently update or overwrite the wrong student. Map.put
+        // replaces by key (the actual id), so it can never be thrown off
+        // by ordering.
         if (!students.containsKey(id)) {
             return ResponseEntity.notFound().build();
         }
@@ -86,6 +147,23 @@ public class StudentController {
     // (non-null here) overwrite the existing student.
     @PatchMapping("/{id}")
     public ResponseEntity<Student> patch(@PathVariable Long id, @RequestBody Student p) {
+        // ORIGINAL (not recommended):
+        // for (Student s : students) {
+        //     if (s.getId().equals(id)) {
+        //         if (p.getFirstName() != null) s.setFirstName(p.getFirstName());
+        //         if (p.getLastName() != null) s.setLastName(p.getLastName());
+        //         if (p.getEmail() != null) s.setEmail(p.getEmail());
+        //         if (p.getAge() != null) s.setAge(p.getAge());
+        //         if (p.getCourse() != null) s.setCourse(p.getCourse());
+        //         return ResponseEntity.ok(s);
+        //     }
+        // }
+        // return ResponseEntity.notFound().build();
+        //
+        // Why: the merge logic (only overwrite fields the client actually
+        // sent) was already correct and is unchanged below. The only
+        // problem was finding `s` via an O(n) loop instead of a direct
+        // Map lookup.
         Student s = students.get(id);
         if (s == null) {
             return ResponseEntity.notFound().build();
@@ -100,6 +178,22 @@ public class StudentController {
 
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> delete(@PathVariable Long id) {
+        // ORIGINAL (not recommended):
+        // for (int i = 0; i < students.size(); i++) {
+        //     if (students.get(i).getId().equals(id)) {
+        //         students.remove(i);
+        //         return ResponseEntity.noContent().build();
+        //     }
+        // }
+        // return ResponseEntity.notFound().build();
+        //
+        // Why: besides the O(n) scan, `students.remove(i)` removes by
+        // *index* (List has an overload that takes an int), not by the
+        // student's id. It only worked here because `i` had just been
+        // found to be the matching index - an easy thing to get wrong if
+        // this code were ever copy-pasted or reordered. Map.remove(id)
+        // removes by the actual key you care about, so there's no
+        // index/id confusion possible.
         if (students.remove(id) == null) {
             return ResponseEntity.notFound().build();
         }
