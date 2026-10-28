@@ -1,0 +1,26 @@
+### Create Mary
+POST http://localhost:8080/api/students
+Content-Type: application/json
+
+{
+  "firstName": "Mary",
+  "lastName": "Smith",
+  "email": "mary@example.com",
+  "age": 22,
+  "course": "Information Systems"
+}
+
+### Create John
+POST http://localhost:8080/api/students
+Content-Type: application/json
+
+{
+  "firstName": "John",
+  "lastName": "Doe",
+  "email": "john@example.com",
+  "age": 23,
+  "course": "Computer Science"
+}
+
+### Show All
+GET http://localhost:8080/api/students
