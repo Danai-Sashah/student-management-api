@@ -1,104 +1,85 @@
 package com.example.studentmanagement;
 
-import jakarta.validation.constraints.Email;
-import jakarta.validation.constraints.Max;
-import jakarta.validation.constraints.Min;
-import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.NotNull;
+import jakarta.persistence.*;
 
 /**
- * Student is a plain model class (a "POJO" - Plain Old Java Object).
- * It just holds data and has no Spring annotations of its own, because
- * Jackson (the JSON library Spring Boot uses under the hood) only needs
- * a no-args constructor plus getters/setters to convert this object
- * to/from JSON automatically. You never call toJson()/fromJson() yourself.
+ * Student is now a JPA *entity*, not a plain POJO. @Entity tells Spring Data
+ * JPA "this class maps to a database table"; @Table(name = "students") names
+ * that table explicitly.
  *
- * The @NotBlank/@Email/@Min/@Max annotations below are from Jakarta
- * Bean Validation. They don't do anything by themselves - they are just
- * metadata. It's StudentController's job to tell Spring to actually check
- * them, which it does with @Valid on the @RequestBody parameter.
+ * ORIGINAL (Exam 1 version) - kept here so you can see what changed:
+ *
+ *   public class Student {
+ *       private Long id;
+ *       @NotBlank(message = "firstName is required") private String firstName;
+ *       @NotBlank @Email private String email;
+ *       @NotNull @Min(16) @Max(100) private Integer age;
+ *       ...
+ *   }
+ *
+ * Why this changed: Exam 1's @NotBlank/@Email/@Min/@Max are Jakarta *Bean
+ * Validation* annotations - they run in Java, before anything touches the
+ * database, and only do something because @Valid on the controller's
+ * @RequestBody tells Spring to check them (see StudentController#create).
+ * They were dropped in favour of the @Column(nullable = ..., unique = ...)
+ * constraints below, which are enforced by MySQL itself instead of Java.
+ * The two aren't interchangeable: without a Bean Validation annotation, a
+ * bad value (e.g. a blank firstName) now fails as a database constraint
+ * violation (a less friendly 500-style error) instead of @Valid's clean
+ * 400. Re-adding both together - Bean Validation for a nice 400, @Column
+ * as the guaranteed last line of defence - is the usual real-world setup.
+ * See docs/marking/REVIEW_2.md.
  */
+@Entity
+@Table(name = "students")
 public class Student {
+
+    // @Id marks this as the primary key column.
+    // @GeneratedValue(strategy = GenerationType.IDENTITY) hands id
+    // generation to MySQL's AUTO_INCREMENT instead of Java - the database
+    // decides the next id, not application code. This is what makes the
+    // exam's "IDs must not be supplied when creating a student" rule
+    // enforceable: the controller just sets id to null before saving
+    // (see StudentController#create) and MySQL fills it in on insert.
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @NotBlank(message = "firstName is required")
+    // nullable = false adds a NOT NULL constraint on this column, matching
+    // the spec's "Required" for firstName/lastName/age/course.
+    @Column(nullable = false)
     private String firstName;
 
-    @NotBlank(message = "lastName is required")
+    @Column(nullable = false)
     private String lastName;
 
-    @NotBlank(message = "email is required")
-    @Email(message = "email must be a valid email address")
+    // unique = true additionally adds a UNIQUE constraint, matching the
+    // spec's "email: Required, unique".
+    @Column(nullable = false, unique = true)
     private String email;
 
-    @NotNull(message = "age is required")
-    @Min(value = 16, message = "age must be at least 16")
-    @Max(value = 100, message = "age must be at most 100")
+    @Column(nullable = false)
     private Integer age;
 
-    @NotBlank(message = "course is required")
+    @Column(nullable = false)
     private String course;
 
-    // Spring/Jackson needs this empty constructor to build a Student
-    // before filling it in field-by-field from incoming JSON.
-    public Student() {
+    // Hibernate needs a no-args constructor so it can create a Student
+    // instance via reflection and then populate its fields from a
+    // database row - it never calls the all-args constructor you'd use
+    // in application code.
+    public Student() {}
 
-    }
-
-    public Student(Long id, String firstName, String lastName, String email, Integer age, String course) {
-        this.id = id;
-        this.firstName = firstName;
-        this.lastName = lastName;
-        this.email = email;
-        this.age = age;
-        this.course = course;
-    }
-
-    public Long getId() {
-        return id;
-    }
-
-    public void setId(Long id) {
-        this.id = id;
-    }
-
-    public String getFirstName() {
-        return firstName;
-    }
-
-    public void setFirstName(String firstName) {
-        this.firstName = firstName;
-    }
-
-    public String getLastName() {
-        return lastName;
-    }
-
-    public void setLastName(String lastName) {
-        this.lastName = lastName;
-    }
-
-    public String getEmail() {
-        return email;
-    }
-
-    public void setEmail(String email) {
-        this.email = email;
-    }
-
-    public Integer getAge() {
-        return age;
-    }
-
-    public void setAge(Integer age) {
-        this.age = age;
-    }
-
-    public String getCourse() {
-        return course;
-    }
-
-    public void setCourse(String course) {
-        this.course = course;
-    }
+    public Long getId() { return id; }
+    public void setId(Long id) { this.id = id; }
+    public String getFirstName() { return firstName; }
+    public void setFirstName(String firstName) { this.firstName = firstName; }
+    public String getLastName() { return lastName; }
+    public void setLastName(String lastName) { this.lastName = lastName; }
+    public String getEmail() { return email; }
+    public void setEmail(String email) { this.email = email; }
+    public Integer getAge() { return age; }
+    public void setAge(Integer age) { this.age = age; }
+    public String getCourse() { return course; }
+    public void setCourse(String course) { this.course = course; }
 }
