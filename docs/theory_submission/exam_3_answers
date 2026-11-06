@@ -1,0 +1,18 @@
+Exam 3 Theory Answers
+
+
+1. Owning side and mappedBy
+In a bidirectional relationship, the owning side is the side that actually has the foreign key column in the database. The inverse side does not have a column. `mappedBy` is used on the inverse side to tell JPA which field on the owning side it is linked to. In my code, the Student side owns the Department-Student relationship because Student has the `@JoinColumn` with `department_id`. Department is the inverse side and uses `mappedBy = "department"`.
+
+2. Why returning JPA entities directly can cause infinite JSON
+If I return JPA entities directly from the controller, Jackson tries to serialize both sides of the relationship. For example, when it serializes a Student, it also serializes the Department, then the list of Students in that Department, then their Department again. This causes an infinite loop and a StackOverflowError. DTOs solve this because I can create a simple object with only the fields I need, like id, firstName, lastName and department name. This stops the circular reference and makes the JSON clean.
+
+3. FetchType.LAZY and FetchType.EAGER
+`LAZY` means the related data is not loaded immediately. It is only loaded when I actually try to access it. `EAGER` means it is loaded straight away when the main entity is loaded. The default for `@ManyToOne` is `EAGER` and the default for `@ManyToMany` is `LAZY`.
+
+4. Why many-to-many needs a join table
+A many-to-many relationship needs a separate join table because one student can be in many courses and one course can have many students. You cannot store that in one column in the students table. So I use an enrollments table with student_id and course_id. Each row is one enrollment. This is the only way to represent many to many properly.
+
+5. Why deleting a department with students should return 409
+If I just let the database error happen, the client will get a 500 error which looks like the server crashed. A 409 Conflict is better because it explains the problem clearly. The delete is conflicting with the current data because students still belong to that department. It tells the client what happened and that the department cannot be deleted right now.
+
